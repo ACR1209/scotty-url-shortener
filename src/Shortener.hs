@@ -11,22 +11,16 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import Network.URI (parseURI)
-import Network.HTTP.Types (status404)
+import Network.HTTP.Types (status404, status400)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
 import Web.Scotty
-import Text.Digestive
-import qualified Text.Digestive.Form as F
-import Text.Digestive.Types
 
 isValidUrl :: Text -> Bool
 isValidUrl input = case parseURI (T.unpack input) of
     Just _  -> True
     Nothing -> False
-
-urlForm :: Monad m => F.Form Text m Text
-urlForm = "url" .: check "Invalid URL format" isValidUrl (F.text Nothing)
 
 indexPage :: H.ToMarkup a => Map a Text -> ActionM ()
 indexPage urls = do
@@ -53,10 +47,14 @@ shortener = do
       
     post "/" $ do
       url <- formParam "url"
-      liftIO $ modifyIORef urlsR $
-        \(i, urls) ->
-          (i + 1, M.insert i url urls)
-      redirect "/"
+      if not (isValidUrl url)
+        then raiseStatus status400 "invalid url"
+        else do
+          liftIO $ modifyIORef urlsR $
+            \(i, urls) ->
+              (i + 1, M.insert i url urls)
+          redirect "/"
+          
     get "/:n" $ do
       n <- captureParam "n"
       (_, urls) <- liftIO $ readIORef urlsR
