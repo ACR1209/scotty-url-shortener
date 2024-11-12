@@ -18,9 +18,11 @@ library
     , containers
     , scotty >= 0.20.1 && < 0.21
     , text
+    , dotenv
     , http-types
     , network-uri
     , digestive-functors == 0.8.4.2
+    , postgresql-simple
 
 executable shortener
   import: common
