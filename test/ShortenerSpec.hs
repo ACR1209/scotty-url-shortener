@@ -9,7 +9,6 @@ import Test.QuickCheck
 import Test.Hspec.QuickCheck (prop)
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
-import Data.Foldable (for_)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
 
 
@@ -55,6 +54,7 @@ main = hspec $ describe "Shortener" $ do
       isWhitespaceOnly (Just "") `shouldBe` True
     it "returns True for a Nothing value" $ do
       isWhitespaceOnly Nothing `shouldBe` True
+  -- this is testing implementation, should this be tested? 
   describe "indexPage" $ do
     it "renders the index page with the correct HTML structure" $ do
       let host = "http://example.com"
