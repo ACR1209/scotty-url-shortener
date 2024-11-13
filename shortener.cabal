@@ -23,6 +23,7 @@ library
     , network-uri
     , digestive-functors == 0.8.4.2
     , postgresql-simple
+    , postgresql-simple-migration
 
 executable shortener
   import: common

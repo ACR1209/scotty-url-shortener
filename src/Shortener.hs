@@ -17,6 +17,7 @@ import Web.Scotty
 import Configuration.Dotenv (loadFile, defaultConfig)
 import System.Environment (getEnv)
 import Database.PostgreSQL.Simple
+import Database.PostgreSQL.Simple.Migration
 
 type DbConnection = Connection
 type Url = (Int, Text)
@@ -60,11 +61,33 @@ getUrlById conn urlId = do
     [Only url] -> Just url
     _          -> Nothing
 
+applyMigrations :: DbConnection -> IO ()
+applyMigrations conn = do
+  let dir = "migrations"
+
+  tables <- getAllTables conn
+
+  let schemaMigrationsExists = any (== Only "schema_migrations") tables
+
+  if not schemaMigrationsExists
+    then do
+      _ <- withTransaction conn $ runMigration $ MigrationContext MigrationInitialization True conn
+      return ()
+    else do
+      return ()
+
+  result <- withTransaction conn $ runMigration $ 
+    MigrationContext (MigrationDirectory dir) True conn
+  liftIO $ print result
+
+
 shortener :: IO ()
 shortener = do
   loadFile defaultConfig
   dbUrl <- getEnv "DATABASE_URL"
   conn <- connectPostgreSQL (encodeUtf8 (T.pack dbUrl))
+
+  applyMigrations conn
 
   scotty 3000 $ do
     get "/" $ do
