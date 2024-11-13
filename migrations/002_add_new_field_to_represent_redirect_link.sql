@@ -1,0 +1,2 @@
+ALTER TABLE url
+ADD COLUMN short_uri TEXT NOT NULL;
