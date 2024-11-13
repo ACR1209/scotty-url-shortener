@@ -40,4 +40,6 @@ test-suite shortener-test
   build-depends:       base
                      , shortener
                      , hspec
+                     , text
+                     , QuickCheck
   default-language:    Haskell2010

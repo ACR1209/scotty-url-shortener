@@ -7,7 +7,7 @@ import Data.Foldable (for_)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
-import Network.URI (parseURI)
+import Network.URI (parseURI, uriAuthority, uriRegName, URI)
 import Data.Text.Encoding (encodeUtf8)
 import Network.HTTP.Types (status404, status400)
 import Text.Blaze.Html.Renderer.Text (renderHtml)
@@ -19,15 +19,22 @@ import System.Environment (getEnv)
 import Database.PostgreSQL.Simple
 import Database.PostgreSQL.Simple.Migration
 import qualified System.Random as SR
+import Data.Char (isSpace)
 
 
 type DbConnection = Connection
 type Url = (Int, Text, Text, Text)
 
+isWhitespaceOnly :: Maybe String -> Bool
+isWhitespaceOnly Nothing = True
+isWhitespaceOnly (Just str) = all isSpace str
+
+validateUri :: URI -> Bool
+validateUri uri = not (isWhitespaceOnly (uriRegName <$> uriAuthority uri))
 
 isValidUrl :: Text -> Bool
 isValidUrl input = case parseURI (T.unpack input) of
-    Just _  -> True
+    Just uri  -> validateUri uri
     Nothing -> False
 
 indexPage :: Text -> [Url] -> ActionM ()
