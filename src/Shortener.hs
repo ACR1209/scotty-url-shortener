@@ -22,7 +22,7 @@ import qualified System.Random as SR
 
 
 type DbConnection = Connection
-type Url = (Int, Text, Text)
+type Url = (Int, Text, Text, Text)
 
 
 isValidUrl :: Text -> Bool
@@ -39,19 +39,25 @@ indexPage host urls = do
         H.form H.! A.method "post" H.! A.action "/" $ do
           H.input H.! A.type_ "text" H.! A.name "url"
           H.input H.! A.type_ "submit"
-        H.table $
-          for_ urls $ \(urlId, originalUrl, shortUrl) ->
+        H.table $ do
+          H.tr $ do
+            H.th "ID"
+            H.th "Original"
+            H.th "Short"
+            H.th "Created At"
+          for_ urls $ \(urlId, originalUrl, shortUrl, createdAt) ->
             H.tr $ do
               H.td (H.toHtml $ show urlId)
               H.td (H.text originalUrl)
               H.td $ H.a H.! A.href (H.toValue $ host <> "/" <> shortUrl) $ H.toHtml (host <> "/" <> shortUrl)
+              H.td (H.text createdAt)
 
 
 getAllTables :: DbConnection -> IO [Only Text]
 getAllTables conn = query_ conn "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
 
 getAllUrls :: DbConnection -> IO [Url]
-getAllUrls conn = query_ conn "SELECT id, original, short_uri FROM url"
+getAllUrls conn = query_ conn "SELECT id, original, short_uri, TO_CHAR(created_at, 'YYYY/MM/DD HH12:MM:SS') FROM url"
 
 insertUrl :: DbConnection -> Text -> IO Int
 insertUrl conn url = do
@@ -59,11 +65,11 @@ insertUrl conn url = do
   [Only urlId] <- query conn "INSERT INTO url (original, short_uri) VALUES (?, ?) RETURNING id" (url, shortUrl)
   return urlId
 
-getUrlByShortUri :: DbConnection -> Text -> IO (Maybe Url)
+getUrlByShortUri :: DbConnection -> Text -> IO (Maybe Text)
 getUrlByShortUri conn shortUri = do
-  results <- query conn "SELECT id, original, short_uri FROM url WHERE short_uri = ?" (Only shortUri)
+  results <- query conn "SELECT original FROM url WHERE short_uri = ?" (Only shortUri)
   return $ case results of
-    [url] -> Just url
+    [Only url] -> Just url
     _     -> Nothing
 
 getUrlById :: DbConnection -> Int -> IO (Maybe Text)
@@ -124,5 +130,5 @@ shortener = do
       n <- captureParam "n"
       url <- liftIO $ getUrlByShortUri conn n
       case url of
-        Just (_, originalUrl, _)  -> redirect (LT.fromStrict originalUrl)
+        Just originalUrl  -> redirect (LT.fromStrict originalUrl)
         Nothing -> raiseStatus status404 "url not found" 
