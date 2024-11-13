@@ -37,9 +37,9 @@ isValidUrl input = case parseURI (T.unpack input) of
     Just uri  -> validateUri uri
     Nothing -> False
 
-indexPage :: Text -> [Url] -> ActionM ()
+indexPage :: Text -> [Url] -> LT.Text
 indexPage host urls = do
-  html $ renderHtml $
+   renderHtml $
     H.html $
       H.body $ do
         H.h1 "Shortener"
@@ -123,7 +123,7 @@ shortener = do
   scotty 3000 $ do
     get "/" $ do
       urls <- liftIO $ getAllUrls conn
-      indexPage host urls
+      html $ indexPage host urls
 
     post "/" $ do
       url <- formParam "url"
