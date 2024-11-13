@@ -96,14 +96,14 @@ applyMigrations conn = do
 
   if not schemaMigrationsExists
     then do
-      _ <- withTransaction conn $ runMigration $ MigrationContext MigrationInitialization True conn
+      _ <- withTransaction conn $ runMigration $ MigrationContext MigrationInitialization False conn
       return ()
     else do
       return ()
 
-  result <- withTransaction conn $ runMigration $ 
-    MigrationContext (MigrationDirectory dir) True conn
-  liftIO $ print result
+  _ <- withTransaction conn $ runMigration $ 
+    MigrationContext (MigrationDirectory dir) False conn
+  return ()
 
 randomString :: Int -> IO Text
 randomString n = do

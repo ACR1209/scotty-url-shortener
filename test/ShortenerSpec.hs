@@ -10,8 +10,28 @@ import Test.Hspec.QuickCheck (prop)
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
 import Text.Blaze.Html.Renderer.Text (renderHtml)
+import Database.PostgreSQL.Simple
+import System.Environment (getEnv)
+import Configuration.Dotenv (loadFile, defaultConfig)
+import Data.Text.Encoding (encodeUtf8)
 
 
+resetDatabase :: IO ()
+resetDatabase = do
+  loadFile defaultConfig
+  connectionStr <- T.pack <$> getEnv "TEST_DATABASE_URL"
+  conn <- connectPostgreSQL $ encodeUtf8 connectionStr
+  _ <- execute_ conn "SET client_min_messages TO WARNING;"
+ 
+  _ <- execute_ conn "DROP SCHEMA public CASCADE;"
+  _ <- execute_ conn "CREATE SCHEMA public;"
+
+  return ()
+
+connectToTestDatabase :: IO DbConnection
+connectToTestDatabase = do
+  connectionStr <- T.pack <$> getEnv "TEST_DATABASE_URL"
+  connectPostgreSQL $ encodeUtf8 connectionStr
 
 main :: IO ()
 main = hspec $ describe "Shortener" $ do
@@ -77,3 +97,141 @@ main = hspec $ describe "Shortener" $ do
                 H.td (H.text "2023/01/01 12:00:00")
       indexPage host urls `shouldBe` renderedHtml
 
+  describe "getAllTables" $ do
+    it "returns an empty list when the database is fresh" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      allTables <- getAllTables conn
+      allTables `shouldBe` []
+      close conn
+    it "returns a list of tables when the database has tables" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- execute_ conn "CREATE TABLE test_table (id SERIAL PRIMARY KEY)"
+
+      allTables <- getAllTables conn
+      allTables `shouldSatisfy` (not . null)
+      allTables `shouldContain` [Only "test_table"]
+      close conn
+
+  describe "applyMigrations" $ do
+    it "creates the 'schema_migrations' table if it doesn't exist" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+
+      allTables <- getAllTables conn
+      allTables `shouldContain` [Only "schema_migrations"]
+      close conn
+    
+    it "does not create the 'schema_migrations' table if it already exists" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+      _ <- applyMigrations conn
+
+      allTables <- getAllTables conn
+      allTables `shouldContain` [Only "schema_migrations"]
+      close conn
+    
+  
+  describe "insertUrl" $ do
+    it "inserts a URL into the database" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+
+      urlId <- insertUrl conn "http://example.com"
+
+      urlId `shouldBe` 1
+
+      close conn
+    
+    it "generates a short URL for the inserted URL" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+
+      urlId <- insertUrl conn "http://example.com"
+
+      shortUrl <- query conn "SELECT id, original, short_uri, TO_CHAR(created_at, 'YYYY/MM/DD HH12:MM:SS') FROM url WHERE id = ?" (Only urlId) :: IO [Url]
+
+      shortUrl `shouldSatisfy` (not . null)
+      shortUrl `shouldSatisfy` all (\(_, _, short, _) -> T.length short == 8)
+
+      close conn
+
+  describe "getUrlByShortUri" $ do
+    it "returns the original URL for a short URI" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+      _ <- applyMigrations conn
+      urlId <- insertUrl conn "http://example.com"
+      urls <- query conn "SELECT id, original, short_uri, TO_CHAR(created_at, 'YYYY/MM/DD HH12:MM:SS') FROM url WHERE id = ?" (Only urlId) :: IO [(Int, T.Text, T.Text, T.Text)]
+      let short = case urls of
+            [(_, _, shortUri, _)] -> shortUri
+            _ -> ""
+
+      url <- getUrlByShortUri conn short
+
+      url `shouldBe` Just "http://example.com"
+
+      close conn
+
+    it "returns Nothing for a short URI that doesn't exist" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+
+      url <- getUrlByShortUri conn "short1"
+
+      url `shouldBe` Nothing
+
+      close conn
+
+  describe "getUrlById" $ do
+    it "returns the original URL for an ID" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+      _ <- applyMigrations conn
+      urlId <- insertUrl conn "http://example.com"
+
+      url <- getUrlById conn urlId
+
+      url `shouldBe` Just "http://example.com"
+
+      close conn
+
+    it "returns Nothing for an ID that doesn't exist" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+
+      _ <- applyMigrations conn
+
+      url <- getUrlById conn 1
+
+      url `shouldBe` Nothing
+
+      close conn
+
+  describe "getAllUrls" $ do
+    it "returns all URLs in the database" $ do
+      _ <- resetDatabase 
+      conn <- connectToTestDatabase
+      _ <- applyMigrations conn
+      _ <- insertUrl conn "http://example.com"
+      _ <- insertUrl conn "http://example.com/path"
+
+      urls <- getAllUrls conn
+
+      urls `shouldSatisfy` (not . null)
+      urls `shouldSatisfy` all (\(_, _, short, _) -> T.length short == 8)
+
+      close conn
