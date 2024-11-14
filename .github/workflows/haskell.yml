@@ -24,10 +24,17 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+    
     env:
       TEST_DATABASE_URL: postgres://myuser:mypassword@localhost:5432/mydb
     steps:
+      
       - uses: actions/checkout@v4
+      - uses: 1arp/create-a-file-action@0.4.5
+        with:
+          path: .
+          file: .env
+          content: "TEST_DATABASE_URL: postgres://myuser:mypassword@localhost:5432/mydb"
       - uses: actions/cache@v4
         with:
           path: ~/.stack
