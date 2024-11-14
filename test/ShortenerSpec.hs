@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main (main) where
 
@@ -14,7 +15,13 @@ import Database.PostgreSQL.Simple
 import System.Environment (getEnv)
 import Configuration.Dotenv (loadFile, defaultConfig)
 import Data.Text.Encoding (encodeUtf8)
+import Data.ByteString (ByteString)
+import Data.ByteString (isInfixOf)
+import qualified Data.ByteString.Lazy as LB (toStrict)
 
+
+import Test.Hspec
+import Test.Hspec.Wai as W
 
 resetDatabase :: IO ()
 resetDatabase = do
@@ -27,6 +34,19 @@ resetDatabase = do
   _ <- execute_ conn "CREATE SCHEMA public;"
 
   return ()
+
+makeDBFresh :: IO ()
+makeDBFresh = do
+  _ <- resetDatabase
+  conn <- connectToTestDatabase
+  _ <- applyMigrations conn
+  return ()
+
+
+multipleInfixMatcher :: [ByteString] -> MatchBody
+multipleInfixMatcher xs = MatchBody (\_ (LB.toStrict -> bdy) -> foldr (\x acc -> case acc of
+  Nothing -> if x `isInfixOf` bdy then Nothing else Just (show x ++ " not found in:" ++ show bdy)
+  Just err -> Just err) Nothing xs)
 
 connectToTestDatabase :: IO DbConnection
 connectToTestDatabase = do
@@ -235,3 +255,48 @@ main = hspec $ describe "Shortener" $ do
       urls `shouldSatisfy` all (\(_, _, short, _) -> T.length short == 8)
 
       close conn
+  describe "test" $ do
+    with (connectToTestDatabase >>= \conn -> api conn "http://localhost:3000") $ do
+      describe "indexEndpoint" $ do
+        beforeAll_ makeDBFresh $ do
+          it "should return status 200" $ do
+            get "/" `shouldRespondWith` 200 
+
+          it "should return an html response" $ do
+            get "/" `shouldRespondWith` 200 {matchHeaders = ["Content-Type" <:> "text/html; charset=utf-8"]}
+
+          it "should contain a form, an input and a submit" $ do
+            get "/" `shouldRespondWith` 200 {matchBody = multipleInfixMatcher ["form", "method=\"post\"", "input", "submit", "name=\"url\""]}
+        
+          it "should show the registered urls" $ do
+            liftIO $ do
+              conn <- connectToTestDatabase
+              _ <- insertUrl conn "http://example.com"
+              _ <- insertUrl conn "http://example2.com"
+              return ()
+            get "/" `shouldRespondWith` 200 {matchBody = multipleInfixMatcher ["http://example.com", "http://example2.com", "1", "2"]}
+
+      describe "registerShortUrlEndpoint" $ do
+        beforeAll_ makeDBFresh $ do
+          it "should return status 400 if not a valid URL" $ do
+            postHtmlForm "/" [("url", "test")] `shouldRespondWith` 400
+          it "should redirect to get '/' if valid URL" $ do
+            postHtmlForm "/" [("url", "http://example.com")] `shouldRespondWith` 302
+          it "should show the newly registered URL when redirected to get '/' if valid URL" $ do
+            _ <- postHtmlForm "/" [("url", "http://example.com")] 
+            get "/" `shouldRespondWith` 200 {matchBody = multipleInfixMatcher ["http://example.com", "1"]}
+            
+
+      describe "getOriginalUrlEndpoint" $ do
+        beforeAll_ makeDBFresh $ do
+          it "should redirect to original URL if short URL exists" $ do
+            [(_, _, shortUri, _)] <- liftIO $ do
+              conn <- connectToTestDatabase
+              urlId <- insertUrl conn "http://example.com"
+              query conn "SELECT id, original, short_uri, TO_CHAR(created_at, 'YYYY/MM/DD HH12:MM:SS') FROM url WHERE id = ?" (Only urlId) :: IO [(Int, T.Text, T.Text, T.Text)]
+
+            get ("/" <> encodeUtf8 shortUri) `shouldRespondWith` 302 
+
+          it "should give status 404 if short URL does not exist" $ do
+            get "/testing" `shouldRespondWith` 404
+

@@ -21,6 +21,8 @@ import Database.PostgreSQL.Simple.Migration
 import qualified System.Random as SR
 import Data.Char (isSpace)
 
+import  Network.Wai (Application)
+import  Network.Wai.Handler.Warp (run)
 
 type DbConnection = Connection
 type Url = (Int, Text, Text, Text)
@@ -111,6 +113,37 @@ randomString n = do
   let chars = ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9']
   return $ T.pack $ take n $ (chars !!) <$> SR.randomRs (0, length chars - 1) gen
 
+indexEndpoint :: DbConnection -> Text -> ScottyM ()
+indexEndpoint conn host = 
+  get "/" $ do
+    urls <- liftIO $ getAllUrls conn
+    html $ indexPage host urls
+
+registerShortUrlEndpoint :: DbConnection -> ScottyM ()
+registerShortUrlEndpoint conn = 
+  post "/" $ do
+    url <- formParam "url"
+    if not $ isValidUrl url
+      then raiseStatus status400 "invalid url"
+      else do
+        _ <- liftIO $ insertUrl conn url
+        redirect "/" 
+
+getOriginalUrlEndpoint :: DbConnection -> ScottyM ()
+getOriginalUrlEndpoint conn =  
+  get "/:n" $ do
+    n <- captureParam "n"
+    url <- liftIO $ getUrlByShortUri conn n
+    case url of
+      Just originalUrl  -> redirect (LT.fromStrict originalUrl)
+      Nothing -> raiseStatus status404 "url not found" 
+
+api :: DbConnection -> Text -> IO Application
+api conn host = scottyApp $ do
+    indexEndpoint conn host
+    registerShortUrlEndpoint conn
+    getOriginalUrlEndpoint conn
+
 shortener :: IO ()
 shortener = do
   loadFile defaultConfig
@@ -120,22 +153,5 @@ shortener = do
 
   applyMigrations conn
 
-  scotty 3000 $ do
-    get "/" $ do
-      urls <- liftIO $ getAllUrls conn
-      html $ indexPage host urls
-
-    post "/" $ do
-      url <- formParam "url"
-      if not $ isValidUrl url
-        then raiseStatus status400 "invalid url"
-        else do
-          _ <- liftIO $ insertUrl conn url
-          redirect "/"
-          
-    get "/:n" $ do
-      n <- captureParam "n"
-      url <- liftIO $ getUrlByShortUri conn n
-      case url of
-        Just originalUrl  -> redirect (LT.fromStrict originalUrl)
-        Nothing -> raiseStatus status404 "url not found" 
+  app <- api conn host
+  run 3000 app
