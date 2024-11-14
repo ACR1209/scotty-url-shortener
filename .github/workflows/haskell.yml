@@ -18,7 +18,7 @@ jobs:
           path: ~/.stack
           key: ${{ runner.os }}-${{ hashFiles('stack.yaml.lock') }}
       - run: ghcup list --tool ghc --hide-old
-      - run: ghcup install ghc 9.8.2 --set
+      - run: ghcup install ghc 9.4.8 --set
       - run: stack config set system-ghc true
       - run: stack config set install-ghc false
       - run: stack build --haddock
