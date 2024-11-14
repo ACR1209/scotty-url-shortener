@@ -2,11 +2,6 @@
 
 This is a simple Haskell project to demonstrate the use of the Scotty web framework.
 
-## Prerequisites
-
-- [Haskell Platform](https://www.haskell.org/platform/)
-- [Stack](https://docs.haskellstack.org/en/stable/README/)
-
 ## Getting Started
 
 1. Clone the repository:
